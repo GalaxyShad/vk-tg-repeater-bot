@@ -1,52 +1,92 @@
-import { tokens, chatId } from './private.mjs';
 import TelegramApi from 'node-telegram-bot-api'
 import VkApi from "node-vk-bot-api"
+import fetch from 'node-fetch';
+import FormData from 'form-data';
+
 import fs from 'fs'
 
-import fetch from 'node-fetch';
-
+import { VK_TOKEN, TG_TOKEN, VK_CHAT_ID, TG_CHAT_ID } from './private.mjs';
 
 const telegram = {
-    TOKEN: tokens.telegram,
-    CHAT_ID: chatId.telegram,
+    TOKEN: TG_TOKEN,
+    CHAT_ID: TG_CHAT_ID,
     bot: null,
 }
 
 const vk = {
-    TOKEN: tokens.vk,
-    PEER_ID: chatId.vk,
+    TOKEN: VK_TOKEN,
+    PEER_ID: VK_CHAT_ID,
     bot: null,
-}
-
-if (!fs.existsSync('bin')){
-    fs.mkdirSync('bin');
 }
 
 //////////////////////////////////////////
 
-vk.bot = new VkApi(vk.TOKEN);
-telegram.bot = new TelegramApi(telegram.TOKEN, {polling: true})
+const telegramFormatUserName = (from) => {
+    if (from == null) return '';
 
-telegram.bot.on('message', async msg => {
-    const {from, chat, text} = msg;
+    return `👤 ${from.first_name} ${from.last_name} (${from.username})`;
+}
 
-    if (chat.id !== telegram.CHAT_ID)
+
+const telegramParseMessage = (message, depth = 0) => {
+    if (message == null) 
+        return '';
+
+    const {from, text, reply_to_message, forward_from} = message;
+
+    const arrowDepth = '▫'.repeat(depth);
+
+    return  `${arrowDepth} ${telegramFormatUserName(from)}\n`
+            + `${forward_from != null ? `📬 Переслано от ${telegramFormatUserName(forward_from)}\n` : '' }`
+            + `${arrowDepth}${text}\n`
+            + telegramParseMessage(reply_to_message, depth+1);
+}
+
+const telegramGetMaxResPhotoId = (photo) => {
+    return photo[
+        Object
+        .keys(photo)
+        .reduce((a, b) => photo[a].width > photo[b].width ? a : b)].file_id;
+}
+
+
+const telegramDownloadPhoto = async (tg, photo) => {
+    if (photo == null)
         return;
 
+    const file = await tg.bot
+        .getFile(telegramGetMaxResPhotoId(photo))
+        .catch(err => console.log(err.response.body));
+
+    return await downloadFile(`https://api.telegram.org/file/bot${tg.TOKEN}/${file.file_path}`, file.file_path);
+}
+
+const vkSendPhoto = async (vk, photo, from) => {
+    if (photo == null) return;
+
+    const filePath = await telegramDownloadPhoto(telegram, photo);
+
+    const {upload_url} = (await vk.bot.api('photos.getMessagesUploadServer', {
+        access_token: vk.TOKEN, peer_id: vk.PEER_ID,
+    })).response;
+
+    const formData  = new FormData();
+    formData.append('photo', fs.createReadStream(filePath));
+
+    const response = await fetch(upload_url, { method: 'post', body: formData});
+    const photoLink = await response.json();
+
+    const {owner_id, id} = (await vk.bot.api('photos.saveMessagesPhoto', 
+        { access_token: vk.TOKEN, ...photoLink})).response[0]
+
     await vk.bot.api('messages.send', {
+        access_token: vk.TOKEN,
         peer_id: vk.PEER_ID,
         random_id: Date.now(),
-        access_token: vk.TOKEN,
-        message: `👤${from.first_name} ${from.last_name} (${from.username})\n > ${text}`
-        
+        message: telegramFormatUserName(from),
+        attachment: `photo${owner_id}_${id}`
     })
-
-    // console.log(msg)
-})
-
-telegram.bot.on('polling_error', (error) => {
-    console.log(error.code);  // => 'EFATAL'
-});
+}
 
 
 const getFileBufferFromUrl = async (url) => {
@@ -90,9 +130,6 @@ const telegramSendDocumentsFromVk = async (telegramBot, docList, author) => {
             }))
             .catch(err => console.log(err));
     }
-
-    console.log(media);
-    console.log(media[0]);
 
     return (media.length > 1)
 
@@ -152,41 +189,31 @@ const vkGetUserName = async (vk, id) => {
 }
 
 
-const vkParseReplyMessage = async (replyMsg, includes=1) => {
-    if (replyMsg == null) return '';
+const vkParseMessage = async (vk, vkMessage, depth = 0) => {
+    if (vkMessage == null) return '';
 
-    const {from_id, text, fwd_messages, reply_message} = replyMsg;
-
-    let userName;
-    await vkGetUserName(vk, from_id).then((usrName) => userName = usrName);
+    const {reply_message, from_id, text, fwd_messages} = vkMessage;
 
     let str = '';
-    const rightArrow = '#'.repeat(includes);
-    str += `${rightArrow} ${userName}\n${rightArrow} ${text}\n\n`;
     
-    await vkParseReplyMessage(reply_message, includes+1).then((s) => str += s);
-    await vkParseForwardedMessages(fwd_messages, includes+1).then((s) => str += s);
+    const userName = await vkGetUserName(vk, from_id);
+
+    const rightArrow = '#'.repeat(depth);
+    str += `${rightArrow} ${userName}\n${rightArrow} ${text}\n\n`;
+
+    str += await vkParseMessage(vk, reply_message, depth+1) 
+        +  await vkParseForwardedMessages(vk, fwd_messages, depth+1);
 
     return str;
 }
 
-const vkParseForwardedMessages = async (fwdMessagesList, includes = 0) => {
+const vkParseForwardedMessages = async (vk, fwdMessagesList, depth = 0) => {
     if (!Array.isArray(fwdMessagesList)) return '';
     if (fwdMessagesList.length <= 0) return '';
     
     let str = '';
-    for (const {reply_message, from_id, text, fwd_messages} of fwdMessagesList) {
-        let userName;
-        await vkGetUserName(vk, from_id).then((usrName) => userName = usrName);
-
-        const rightArrow = '#'.repeat(includes);
-        str += `${rightArrow} ${userName}\n${rightArrow} ${text}\n\n`;
-
-        await vkParseReplyMessage(reply_message, includes+1).then((s) => str += s);
-
-        await vkParseForwardedMessages(fwd_messages, includes+1).then((s) => {
-            str += s;
-        });
+    for (const msg of fwdMessagesList) {
+        str += await vkParseMessage(vk, msg, depth);
     }
 
     return str;
@@ -194,31 +221,53 @@ const vkParseForwardedMessages = async (fwdMessagesList, includes = 0) => {
 
 ////////////////////////////////////////////
 
+if (!fs.existsSync('bin')) fs.mkdirSync('bin');  
+if (!fs.existsSync('bin/photos')) fs.mkdirSync('bin/photos');
+
+vk.bot = new VkApi(vk.TOKEN);
+telegram.bot = new TelegramApi(telegram.TOKEN, { polling: true });
+
 vk.bot.on(async ctx => {
     const {message} = ctx;
 
-    console.log(message.peer_id)
-
-    if (message.peer_id != vk.PEER_ID)
+    if (message.peer_id !== vk.PEER_ID)
         return;
 
-    let userName = 'unknown';
-
-    await vkGetUserName(vk, message.from_id).then((usrName) => userName = usrName);
+    const userName = await vkGetUserName(vk, message.from_id);
 
     const docs = message.attachments.filter(attachment => attachment.type === 'doc');
     const images = message.attachments.filter(attachment => attachment.type === 'photo');
-    
+
     await telegramSendPhotosFromVk(telegram.bot, images, userName);
     await telegramSendDocumentsFromVk(telegram.bot, docs, userName);
 
-    // console.log(message);
-
-    await vkParseForwardedMessages([message]).then(resp => {
-        if (resp !== '')
-            telegram.bot.sendMessage(telegram.CHAT_ID, resp);
-    });
+    const respondText = await vkParseMessage(vk, message);
+    if (respondText !== '') telegram.bot.sendMessage(telegram.CHAT_ID, respondText);
 
 });
   
+
+telegram.bot.on('message', async msg => {
+    const {chat, photo, from} = msg;
+
+    if (chat.id !== telegram.CHAT_ID)
+        return;
+        
+    await vkSendPhoto(vk, msg.photo, from);
+    
+    if (msg.text != null)
+        await vk.bot.api('messages.send', {
+            peer_id: vk.PEER_ID,
+            random_id: Date.now(),
+            access_token: vk.TOKEN,
+            message: telegramParseMessage(msg)
+        })
+
+})
+
+telegram.bot.on('polling_error', (error) => {
+    console.log(error.code); 
+});
+
+
 vk.bot.startPolling();

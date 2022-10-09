@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "form-data": "^4.0.0",
     "node-fetch": "^3.2.10",
     "node-telegram-bot-api": "^0.59.0",
     "node-vk-bot-api": "^3.5.0",
