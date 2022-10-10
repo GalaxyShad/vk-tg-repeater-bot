@@ -42,7 +42,7 @@ const telegramSendError = (tg, err) => {
         `❌ ЬЬььуууууу(( Ошибка!!! ❌\n\n${err}` 
     ).catch(error => {
         console.log(`>> Vk Fail <<\n${err}\n`)
-        console.log(`>> Telegram Fail <<\n${error?.response?.body}`)
+        console.log(`>> Telegram Fail <<\n${error}`)
     })
 }
 
