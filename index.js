@@ -40,9 +40,9 @@ const telegramSendError = (tg, err) => {
     tg.bot.sendMessage(
         tg.CHAT_ID, 
         `❌ ЬЬььуууууу(( Ошибка!!! ❌\n\n${err}` 
-    ).catch(err => {
+    ).catch(error => {
         console.log(`>> Vk Fail <<\n${err}\n`)
-        console.log(`>> Telegram Fail <<\n${err.response.body}`)
+        console.log(`>> Telegram Fail <<\n${error?.response?.body}`)
     })
 }
 
@@ -301,13 +301,12 @@ telegram.bot.on('message', async msg => {
 
 telegram.bot.on('polling_error', (error) => {
     telegramSendError(telegram, error);
-    // console.log(error.code); 
+    console.log(error.code); 
 });
-
 
 vk.bot.startPolling((err) => {
     if (err == null) return;
-    
     telegramSendError(telegram, vkErrorFormat(err));
     console.log(err);
 });
+
