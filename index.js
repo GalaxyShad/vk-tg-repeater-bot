@@ -21,6 +21,32 @@ const vk = {
 
 //////////////////////////////////////////
 
+
+const vkErrorFormat = (err) => {
+    const { message, response } = err;
+    
+    const { error_code, error_msg } = response;
+
+    return  `>> VK Bot Error <<\n` +
+            `[${message}] [${error_code}] ${error_msg}`;
+}
+
+
+const telegramSendError = (tg, err) => {
+    if (typeof err === 'object')
+        err = JSON.stringify(err, null, 2)
+
+
+    tg.bot.sendMessage(
+        tg.CHAT_ID, 
+        `❌ ЬЬььуууууу(( Ошибка!!! ❌\n\n${err}` 
+    ).catch(err => {
+        console.log(`>> Vk Fail <<\n${err}\n`)
+        console.log(`>> Telegram Fail <<\n${err.response.body}`)
+    })
+}
+
+
 const telegramFormatUserName = (from) => {
     if (from == null) return '';
 
@@ -60,6 +86,7 @@ const telegramDownloadPhoto = async (tg, photo) => {
 
     return await downloadFile(`https://api.telegram.org/file/bot${tg.TOKEN}/${file.file_path}`, file.file_path);
 }
+
 
 const vkSendPhoto = async (vk, photo, from) => {
     if (photo == null) return;
@@ -137,7 +164,7 @@ const telegramSendDocumentsFromVk = async (telegramBot, docList, author) => {
 
       : telegramBot.sendDocument(telegram.CHAT_ID, media[0].media, {
           caption: author,
-        }).then(()=>console.log('sadasdasd')).catch(err => console.log(err.response.body));
+        }).then(() => console.log('sadasdasd')).catch(err => console.log(err.response.body));
 }
 
 
@@ -227,11 +254,11 @@ if (!fs.existsSync('bin/photos')) fs.mkdirSync('bin/photos');
 vk.bot = new VkApi(vk.TOKEN);
 telegram.bot = new TelegramApi(telegram.TOKEN, { polling: true });
 
+
 vk.bot.on(async ctx => {
     const {message} = ctx;
 
-    if (message.peer_id !== vk.PEER_ID)
-        return;
+    if (message.peer_id !== vk.PEER_ID) return;
 
     const userName = await vkGetUserName(vk, message.from_id);
 
@@ -245,7 +272,7 @@ vk.bot.on(async ctx => {
     if (respondText !== '') telegram.bot.sendMessage(telegram.CHAT_ID, respondText);
 
 });
-  
+
 
 telegram.bot.on('message', async msg => {
     const {chat, photo, from} = msg;
@@ -253,7 +280,11 @@ telegram.bot.on('message', async msg => {
     if (chat.id !== telegram.CHAT_ID)
         return;
         
-    await vkSendPhoto(vk, msg.photo, from);
+    await vkSendPhoto(vk, photo, from)
+        .catch((err) => {
+            console.log(err);
+            telegramSendError(telegram, vkErrorFormat(err))
+        });
     
     if (msg.text != null)
         await vk.bot.api('messages.send', {
@@ -261,13 +292,22 @@ telegram.bot.on('message', async msg => {
             random_id: Date.now(),
             access_token: vk.TOKEN,
             message: telegramParseMessage(msg)
-        })
+        }).catch((err) => {
+            console.log(err);
+            telegramSendError(telegram, vkErrorFormat(err))
+        });
 
 })
 
 telegram.bot.on('polling_error', (error) => {
-    console.log(error.code); 
+    telegramSendError(telegram, error);
+    // console.log(error.code); 
 });
 
 
-vk.bot.startPolling();
+vk.bot.startPolling((err) => {
+    if (err == null) return;
+    
+    telegramSendError(telegram, vkErrorFormat(err));
+    console.log(err);
+});
