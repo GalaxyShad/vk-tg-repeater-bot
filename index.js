@@ -64,7 +64,7 @@ const telegramParseMessage = (message, depth = 0) => {
 
     return  `${arrowDepth} ${telegramFormatUserName(from)}\n`
             + `${forward_from != null ? `📬 Переслано от ${telegramFormatUserName(forward_from)}\n` : '' }`
-            + `${arrowDepth} 💬 ${text}\n`
+            + `${arrowDepth}💬 ${text}\n`
             + telegramParseMessage(reply_to_message, depth+1);
 }
 
@@ -226,7 +226,7 @@ const vkParseMessage = async (vk, vkMessage, depth = 0) => {
     const userName = await vkGetUserName(vk, from_id);
 
     const rightArrow = '#'.repeat(depth);
-    str += `${rightArrow} ${userName}\n${rightArrow} 💬 ${text}\n\n`;
+    str += `${rightArrow} ${userName}\n${rightArrow}💬 ${text}\n\n`;
 
     str += await vkParseMessage(vk, reply_message, depth+1) 
         +  await vkParseForwardedMessages(vk, fwd_messages, depth+1);
