@@ -25,10 +25,16 @@ const vk = {
 const vkErrorFormat = (err) => {
     const { message, response } = err;
     
-    const { error_code, error_msg } = response;
+    let str = `[${message}]`;
 
-    return  `>> VK Bot Error <<\n` +
-            `[${message}] [${error_code}] ${error_msg}`;
+    if (response) {
+        const {error_code, error_msg} = response;
+        str +=  `[${error_code}] ${error_msg}`;
+    } else {
+        str += `[${message}] [Unknown Error]`;
+    }
+
+    return  `>> VK Bot Error <<\n` + str;
 }
 
 
@@ -41,8 +47,8 @@ const telegramSendError = (tg, err) => {
         tg.CHAT_ID, 
         `❌ ЬЬььуууууу(( Ошибка!!! ❌\n\n${err}` 
     ).catch(error => {
-        console.log(`>> Vk Fail <<\n${err}\n`)
-        console.log(`>> Telegram Fail <<\n${error}`)
+        // console.log(`>> Vk Fail <<\n${err}\n`)
+        // console.log(`>> Telegram Fail <<\n${error.body}`)
     })
 }
 
@@ -300,13 +306,11 @@ telegram.bot.on('message', async msg => {
 })
 
 telegram.bot.on('polling_error', (error) => {
-    telegramSendError(telegram, error);
-    console.log(error.code); 
+    console.log(`[Telegram] [Polling Error] ${error}`);
 });
 
 vk.bot.startPolling((err) => {
     if (err == null) return;
-    telegramSendError(telegram, vkErrorFormat(err));
-    console.log(err);
+    console.log(`[Vk] [Polling Error] ${err.toJSON().stack}`);
 });
 
