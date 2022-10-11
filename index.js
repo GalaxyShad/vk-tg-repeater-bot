@@ -50,7 +50,7 @@ const telegramSendError = (tg, err) => {
 const telegramFormatUserName = (from) => {
     if (from == null) return '';
 
-    return `👤 ${from.first_name} ${from.last_name} (${from.username})`;
+    return `⛄️ ${from.first_name} ${from.last_name} (${from.username})`;
 }
 
 
